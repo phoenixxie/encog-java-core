@@ -415,4 +415,10 @@ public class RBFNetwork extends BasicML implements MLError, MLRegression,
 			index += rbf.getCenters().length;
 		}
 	}
+
+	@Override
+	public void decodeFromArray(double[] encoded, double[][] bias) {
+		// TODO Auto-generated method stub
+		this.decodeFromArray(encoded);
+	}
 }

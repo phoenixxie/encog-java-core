@@ -102,9 +102,10 @@ public class FlatNetwork implements Serializable, Cloneable {
 	 * The outputs from each of the neurons.
 	 */
 	private double[] layerOutput;
-	
+
 	/**
-	 * The sum of the layer, before the activation function is applied, producing the layerOutput.
+	 * The sum of the layer, before the activation function is applied,
+	 * producing the layerOutput.
 	 */
 	private double[] layerSums;
 
@@ -122,6 +123,11 @@ public class FlatNetwork implements Serializable, Cloneable {
 	 * The weights for a neural network.
 	 */
 	private double[] weights;
+
+	/**
+	 * The bias for each neuron
+	 */
+	private double[][] biases;
 
 	/**
 	 * The activation types.
@@ -266,7 +272,8 @@ public class FlatNetwork implements Serializable, Cloneable {
 		for (int i = 0; i < data.getRecordCount(); i++) {
 			data.getRecord(i, pair);
 			compute(pair.getInputArray(), actual);
-			errorCalculation.updateError(actual, pair.getIdealArray(), pair.getSignificance());
+			errorCalculation.updateError(actual, pair.getIdealArray(),
+					pair.getSignificance());
 		}
 		return errorCalculation.calculate();
 	}
@@ -290,16 +297,18 @@ public class FlatNetwork implements Serializable, Cloneable {
 			final boolean hasBias = (this.layerContextCount[i] + this.layerFeedCounts[i]) != this.layerCounts[i];
 
 			// fill in regular neurons
-			Arrays.fill(this.layerOutput, index, index+this.layerFeedCounts[i], 0);
+			Arrays.fill(this.layerOutput, index, index
+					+ this.layerFeedCounts[i], 0);
 			index += this.layerFeedCounts[i];
 
 			// fill in the bias
 			if (hasBias) {
 				this.layerOutput[index++] = this.biasActivation[i];
 			}
-			
+
 			// fill in context
-			Arrays.fill(this.layerOutput, index, index+this.layerContextCount[i], 0);
+			Arrays.fill(this.layerOutput, index, index
+					+ this.layerContextCount[i], 0);
 			index += this.layerContextCount[i];
 		}
 	}
@@ -339,6 +348,7 @@ public class FlatNetwork implements Serializable, Cloneable {
 		result.outputCount = this.outputCount;
 		result.weightIndex = this.weightIndex;
 		result.weights = this.weights;
+		result.biases = this.biases;
 
 		result.activationFunctions = new ActivationFunction[this.activationFunctions.length];
 		for (int i = 0; i < result.activationFunctions.length; i++) {
@@ -367,12 +377,12 @@ public class FlatNetwork implements Serializable, Cloneable {
 		for (int i = this.layerIndex.length - 1; i > 0; i--) {
 			computeLayer(i);
 		}
-		
+
 		// update context values
 		final int offset = this.contextTargetOffset[0];
 
-		EngineArray.arrayCopy(this.layerOutput, 0, layerOutput,
-				offset, this.contextTargetSize[0]);
+		EngineArray.arrayCopy(this.layerOutput, 0, layerOutput, offset,
+				this.contextTargetSize[0]);
 
 		EngineArray.arrayCopy(this.layerOutput, 0, output, 0, this.outputCount);
 	}
@@ -394,12 +404,19 @@ public class FlatNetwork implements Serializable, Cloneable {
 
 		final int limitX = outputIndex + outputSize;
 		final int limitY = inputIndex + inputSize;
+		
+		boolean hasBias = biases[currentLayer - 1].length != 0;
+		int biasIndex = this.layerFeedCounts[currentLayer];
 
 		// weight values
 		for (int x = outputIndex; x < limitX; x++) {
 			double sum = 0;
 			for (int y = inputIndex; y < limitY; y++) {
-				sum += this.weights[index++] * this.layerOutput[y];
+				if (hasBias && y - inputIndex == biasIndex) {
+					sum += this.weights[index++] * this.biases[currentLayer - 1][x - outputIndex];
+				} else {
+					sum += this.weights[index++] * this.layerOutput[y];
+				}
 			}
 			this.layerSums[x] = sum;
 			this.layerOutput[x] = sum;
@@ -411,8 +428,8 @@ public class FlatNetwork implements Serializable, Cloneable {
 		// update context values
 		final int offset = this.contextTargetOffset[currentLayer];
 
-		EngineArray.arrayCopy(this.layerOutput, outputIndex,
-				this.layerOutput, offset, this.contextTargetSize[currentLayer]);
+		EngineArray.arrayCopy(this.layerOutput, outputIndex, this.layerOutput,
+				offset, this.contextTargetSize[currentLayer]);
 	}
 
 	/**
@@ -582,6 +599,13 @@ public class FlatNetwork implements Serializable, Cloneable {
 	}
 
 	/**
+	 * @return The index of each layer in the biases array.
+	 */
+	public double[][] getBiases() {
+		return this.biases;
+	}
+
+	/**
 	 * Neural networks with only one type of activation function offer certain
 	 * optimization options. This method determines if only a single activation
 	 * function is used.
@@ -628,6 +652,7 @@ public class FlatNetwork implements Serializable, Cloneable {
 		this.contextTargetOffset = new int[layerCount];
 		this.contextTargetSize = new int[layerCount];
 		this.biasActivation = new double[layerCount];
+		this.biases = new double[layerCount][];
 
 		int index = 0;
 		int neuronCount = 0;
@@ -652,6 +677,18 @@ public class FlatNetwork implements Serializable, Cloneable {
 
 			if (nextLayer != null) {
 				weightCount += layer.getCount() * nextLayer.getTotalCount();
+				if (nextLayer.hasBias()) {
+					int count = layer.getCount();
+
+					this.biases[index] = new double[count];
+					for (int j = 0; j < count; ++j) {
+						this.biases[index][j] = layer.getBiasActivation();
+					}
+				}
+			}
+			
+			if (this.biases[index] == null) {
+				this.biases[index] = new double[0];
 			}
 
 			if (index == 0) {
@@ -721,7 +758,9 @@ public class FlatNetwork implements Serializable, Cloneable {
 
 	/**
 	 * Set the activation functions.
-	 * @param af The activation functions.
+	 * 
+	 * @param af
+	 *            The activation functions.
 	 */
 	public void setActivationFunctions(final ActivationFunction[] af) {
 		this.activationFunctions = Arrays.copyOf(af, af.length);
@@ -737,7 +776,9 @@ public class FlatNetwork implements Serializable, Cloneable {
 
 	/**
 	 * Set the bias activation.
-	 * @param biasActivation The bias activation.
+	 * 
+	 * @param biasActivation
+	 *            The bias activation.
 	 */
 	public void setBiasActivation(final double[] biasActivation) {
 		this.biasActivation = biasActivation;
@@ -757,7 +798,9 @@ public class FlatNetwork implements Serializable, Cloneable {
 
 	/**
 	 * Set the context target offset.
-	 * @param contextTargetOffset The context target offset.
+	 * 
+	 * @param contextTargetOffset
+	 *            The context target offset.
 	 */
 	public void setContextTargetOffset(final int[] contextTargetOffset) {
 		this.contextTargetOffset = EngineArray.arrayCopy(contextTargetOffset);
@@ -766,7 +809,9 @@ public class FlatNetwork implements Serializable, Cloneable {
 
 	/**
 	 * Set the context target size.
-	 * @param contextTargetSize The context target size.
+	 * 
+	 * @param contextTargetSize
+	 *            The context target size.
 	 */
 	public void setContextTargetSize(final int[] contextTargetSize) {
 		this.contextTargetSize = EngineArray.arrayCopy(contextTargetSize);
@@ -783,7 +828,9 @@ public class FlatNetwork implements Serializable, Cloneable {
 
 	/**
 	 * Set the hasContext property.
-	 * @param hasContext True if the network has context.
+	 * 
+	 * @param hasContext
+	 *            True if the network has context.
 	 */
 	public void setHasContext(final boolean hasContext) {
 		this.hasContext = hasContext;
@@ -791,7 +838,9 @@ public class FlatNetwork implements Serializable, Cloneable {
 
 	/**
 	 * Set the input count.
-	 * @param inputCount The input count.
+	 * 
+	 * @param inputCount
+	 *            The input count.
 	 */
 	public void setInputCount(final int inputCount) {
 		this.inputCount = inputCount;
@@ -799,7 +848,9 @@ public class FlatNetwork implements Serializable, Cloneable {
 
 	/**
 	 * Set the layer context count.
-	 * @param layerContextCount The layer context count.
+	 * 
+	 * @param layerContextCount
+	 *            The layer context count.
 	 */
 	public void setLayerContextCount(final int[] layerContextCount) {
 		this.layerContextCount = EngineArray.arrayCopy(layerContextCount);
@@ -807,7 +858,9 @@ public class FlatNetwork implements Serializable, Cloneable {
 
 	/**
 	 * Set the layer counts.
-	 * @param layerCounts The layer counts.
+	 * 
+	 * @param layerCounts
+	 *            The layer counts.
 	 */
 	public void setLayerCounts(final int[] layerCounts) {
 		this.layerCounts = EngineArray.arrayCopy(layerCounts);
@@ -821,7 +874,9 @@ public class FlatNetwork implements Serializable, Cloneable {
 
 	/**
 	 * Set the layer index.
-	 * @param i The layer index.
+	 * 
+	 * @param i
+	 *            The layer index.
 	 */
 	public void setLayerIndex(final int[] i) {
 		this.layerIndex = EngineArray.arrayCopy(i);
@@ -829,7 +884,9 @@ public class FlatNetwork implements Serializable, Cloneable {
 
 	/**
 	 * Set the layer output.
-	 * @param layerOutput The layer output.
+	 * 
+	 * @param layerOutput
+	 *            The layer output.
 	 */
 	public void setLayerOutput(final double[] layerOutput) {
 		this.layerOutput = EngineArray.arrayCopy(layerOutput);
@@ -837,7 +894,9 @@ public class FlatNetwork implements Serializable, Cloneable {
 
 	/**
 	 * Set the output count.
-	 * @param outputCount The output count.
+	 * 
+	 * @param outputCount
+	 *            The output count.
 	 */
 	public void setOutputCount(final int outputCount) {
 		this.outputCount = outputCount;
@@ -845,7 +904,9 @@ public class FlatNetwork implements Serializable, Cloneable {
 
 	/**
 	 * Set the weight index.
-	 * @param weightIndex The weight index.
+	 * 
+	 * @param weightIndex
+	 *            The weight index.
 	 */
 	public void setWeightIndex(final int[] weightIndex) {
 		this.weightIndex = EngineArray.arrayCopy(weightIndex);
@@ -854,7 +915,9 @@ public class FlatNetwork implements Serializable, Cloneable {
 
 	/**
 	 * Set the weights.
-	 * @param weights The weights.
+	 * 
+	 * @param weights
+	 *            The weights.
 	 */
 	public void setWeights(final double[] weights) {
 		this.weights = EngineArray.arrayCopy(weights);
@@ -869,12 +932,13 @@ public class FlatNetwork implements Serializable, Cloneable {
 
 	/**
 	 * Set the layer sums.
-	 * @param d The layer sums.
+	 * 
+	 * @param d
+	 *            The layer sums.
 	 */
 	public void setLayerSums(double[] d) {
 		this.layerSums = EngineArray.arrayCopy(d);
-		
+
 	}
-	
-	
+
 }

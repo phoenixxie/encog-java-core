@@ -589,6 +589,12 @@ public class FreeformNetwork extends BasicML implements MLContext, Cloneable,
 		}
 	}
 
+	@Override
+	public void decodeFromArray(double[] encoded, double[][] bias) {
+		// TODO Auto-generated method stub
+		this.decodeFromArray(encoded);
+	}
+
 	/**
 	 * {@inheritDoc}
 	 */

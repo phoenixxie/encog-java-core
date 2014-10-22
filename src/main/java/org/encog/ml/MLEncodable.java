@@ -47,4 +47,6 @@ public interface MLEncodable extends MLMethod {
 	 * @param encoded The encoded array.
 	 */
 	void decodeFromArray(double[] encoded);
+	
+	void decodeFromArray(double[] encoded, double[][] bias);
 }
